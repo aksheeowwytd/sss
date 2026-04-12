@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Autojoiner Live Logs</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0f0f0f; color: #e0e0e0; font-family: 'Courier New', monospace; font-size: 13px; padding: 16px; }
+h1 { font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 12px; }
+.topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #555; flex-shrink: 0; transition: background 0.3s; }
+.dot.on { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,0.2); }
+.dot.err { background: #ef4444; }
+.lbl { font-size: 12px; color: #888; flex: 1; }
+.btn { font-size: 11px; padding: 3px 10px; border: 1px solid #333; border-radius: 5px; background: #1a1a1a; color: #aaa; cursor: pointer; }
+.btn:hover { background: #252525; color: #fff; }
+.logbox { background: #0a0a0a; border: 1px solid #222; border-radius: 8px; height: calc(100vh - 140px); min-height: 300px; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.row { font-size: 12px; line-height: 1.5; border-radius: 4px; padding: 5px 10px; word-break: break-all; display: flex; gap: 8px; }
+.row.alert { background: #0d2e1a; color: #4ade80; border: 1px solid #166534; font-weight: 600; font-size: 13px; }
+.row.warn { background: #2a1f00; color: #fbbf24; }
+.row.error { background: #2a0a0a; color: #f87171; }
+.row.skip { color: #333; font-style: italic; font-size: 11px; }
+.ts { opacity: 0.4; flex-shrink: 0; font-size: 10.5px; padding-top: 1px; min-width: 64px; }
+.msg { flex: 1; }
+.stats { display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
+.stat { font-size: 11px; color: #555; }
+.stat b { color: #aaa; }
+</style>
+</head>
+<body>
+<h1>Autojoiner Live Logs</h1>
+<div class="topbar">
+  <span class="dot" id="dot"></span>
+  <span class="lbl" id="lbl">Connecting...</span>
+  <button class="btn" onclick="clearLogs()">Clear</button>
+  <button class="btn" onclick="clearMemory()">Reset Memory</button>
+</div>
+<div class="logbox" id="logbox"></div>
+<div class="stats">
+  <div class="stat">Servers found: <b id="sn">0</b></div>
+  <div class="stat">Skipped (seen): <b id="sk">0</b></div>
+  <div class="stat">Messages: <b id="sm">0</b></div>
+</div>
+<script>
+var box=document.getElementById('logbox'),dot=document.getElementById('dot'),lbl=document.getElementById('lbl');
+var found=0,skipped=0,msgs=0;
+var MEMORY_TTL=5*60*1000,MEMORY_KEY='autojoiner_seen_jobs';
+function loadMemory(){try{return JSON.parse(localStorage.getItem(MEMORY_KEY)||'{}')}catch(e){return{}}}
+function saveMemory(mem){var now=Date.now(),clean={};for(var k in mem){if(now-mem[k]<MEMORY_TTL)clean[k]=mem[k]}try{localStorage.setItem(MEMORY_KEY,JSON.stringify(clean))}catch(e){}}
+function hasSeenJob(j){var m=loadMemory();if(!m[j])return false;if(Date.now()-m[j]>MEMORY_TTL){delete m[j];saveMemory(m);return false}return true}
+function markJobSeen(j){var m=loadMemory();m[j]=Date.now();saveMemory(m)}
+function clearMemory(){try{localStorage.removeItem(MEMORY_KEY)}catch(e){}skipped=0;upd();addRow('Memory cleared','skip')}
+function clearLogs(){box.innerHTML='';found=0;msgs=0;upd()}
+function upd(){document.getElementById('sn').textContent=found;document.getElementById('sk').textContent=skipped;document.getElementById('sm').textContent=msgs}
+function ts(){return new Date().toLocaleTimeString('en-US',{hour12:false})}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function addRow(text,cls){var d=document.createElement('div');d.className='row '+cls;d.innerHTML='<span class="ts">'+ts()+'</span><span class="msg">'+esc(text)+'</span>';box.appendChild(d);msgs++;box.scrollTop=box.scrollHeight;upd()}
+function connect(){
+  var ws;try{ws=new WebSocket('wss://autojoiner-sab-production.up.railway.app')}catch(e){dot.className='dot err';lbl.textContent='Failed';return}
+  ws.binaryType='arraybuffer';
+  ws.onopen=function(){dot.className='dot on';lbl.textContent='Connected'};
+  ws.onmessage=function(e){
+    var text=e.data instanceof ArrayBuffer?new TextDecoder().decode(new Uint8Array(e.data)):e.data;
+    var obj;try{obj=JSON.parse(text)}catch(x){return}
+    if(!obj||obj.type==='ping'||obj.type==='pong'||obj.type==='hello')return;
+    if(obj.type!=='log')return;
+    var msg=obj.message||'',level=obj.level||'info';
+    if(level==='info')return;
+    if(msg.indexOf('Filtered:')===0)return;
+    if(msg.indexOf('Poll #')===0)return;
+    if(msg.indexOf('Main WS')===0)return;
+    if(msg.indexOf('ESP WS')===0)return;
+    if(msg.indexOf('NEW SERVER')!==-1)return;
+    if(msg.indexOf('reconnecting')!==-1)return;
+    if(msg.indexOf('connected as')!==-1)return;
+    if(level==='success'){
+      var jm=msg.match(/job=([a-f0-9-]+)/),jobId=jm?jm[1]:null;
+      var serverTs=obj.timestamp?obj.timestamp*1000:null;
+      if(serverTs&&Date.now()-serverTs>60000)return;
+      if(jobId&&hasSeenJob(jobId)){skipped++;upd();return}
+      if(jobId)markJobSeen(jobId);
+      var nm=msg.match(/name=([^|]+)/),pl=msg.match(/players=([0-9]+)/);
+      var name=nm?nm[1].trim():msg,players=pl?pl[1]+' players':'? players';
+      found++;addRow('NEW: '+name+' - '+players+(jobId?' ['+jobId+']':''),'alert');return;
+    }
+    if(level==='warn'){addRow(msg,'warn');return}
+    if(level==='error'){addRow(msg,'error');return}
+  };
+  ws.onclose=function(){dot.className='dot err';lbl.textContent='Disconnected - reconnecting...';setTimeout(connect,3000)};
+  ws.onerror=function(){};
+}
+connect();
+</script>
+</body>
+</html>
