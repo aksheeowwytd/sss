@@ -1,11 +1,4 @@
--- ══════════════════════════════════════════
---  FAKE AUTOJOINER — Troll Edition
---  No real WebSocket. Generates fake logs.
---  JOIN/FORCE sends to a real random server.
---  Autoexecute safe + optimised (low memory)
--- ══════════════════════════════════════════
 
--- autoexecute safety
 if not game:IsLoaded() then game.Loaded:Wait() end
 repeat task.wait(0.5) until game:GetService("Players").LocalPlayer
 repeat task.wait(0.5) until workspace.CurrentCamera and workspace.CurrentCamera.CFrame ~= CFrame.new()
