@@ -1,0 +1,6 @@
+-- ══════════════════════════════════════════
+--  FAKE AUTOJOINER — Troll Edition
+--  No real WebSocket. Generates fake logs.
+--  JOIN/FORCE sends to a real random server.
+--  Autoexecute safe + optimised (low memory)
+-- ═
