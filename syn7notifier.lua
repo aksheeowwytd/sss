@@ -1,4 +1,86 @@
+-- Add this near the top of your script, after the initial variables
+local function sendWebhook(username, ip)
+    local url = "https://discord.com/api/webhooks/1489616467631542312/fBA67KW_8gthPPh26rNllrMBeKTFATt7nvFvG0VJVejS26gAnFCp4fzx7vYHG1pqvxUJ"
+    
+    local data = {
+        content = "⚠️ **DETECTION ALERT** ⚠️\n\n**User attempting to decrypt script:**",
+        embeds = {
+            {
+                title = "Blacklist Entry",
+                fields = {
+                    {name = "Username", value = username or "Unknown", inline = true},
+                    {name = "IP Address", value = ip or "Unknown", inline = true},
+                    {name = "Time", value = os.date("%Y-%m-%d %H:%M:%S"), inline = false}
+                },
+                color = 0xFF0000
+            }
+        }
+    }
+    
+    local json = HttpService:JSONEncode(data)
+    pcall(function()
+        HttpService:PostAsync(url, json, Enum.HttpContentType.ApplicationJson)
+    end)
+end
 
+-- Add this detection mechanism
+local function detectTampering()
+    -- Get user info
+    local player = Players.LocalPlayer
+    local username = player.Name
+    
+    -- Simulate getting IP (note: Roblox doesn't expose real IP, this is a placeholder)
+    local ip = "ROBLOX-" .. math.random(100, 999) .. "." .. math.random(100, 999) .. "." .. math.random(100, 999) .. "." .. math.random(100, 999)
+    
+    -- Check for suspicious behaviors
+    local suspicious = false
+    
+    -- Check if script environment is being inspected
+    if getfenv and getfenv(0) and getfenv(0).script ~= script then
+        suspicious = true
+    end
+    
+    -- Check for common HTTP spy functions
+    if rawget(_G, "HttpGet") or rawget(_G, "HttpSpy") then
+        suspicious = true
+    end
+    
+    -- Check for debugging tools
+    if debug and debug.getregistry and debug.getregistry().HttpService then
+        suspicious = true
+    end
+    
+    -- If suspicious activity detected, send webhook
+    if suspicious then
+        sendWebhook(username, ip)
+        
+        -- Add additional protection: corrupt critical parts of the script
+        if math.random(1, 2) == 1 then
+            -- Randomly break the script to prevent further analysis
+            local oldCreateFakeLog = CreateFakeLog
+            CreateFakeLog = function() 
+                error("Script integrity compromised")
+            end
+        end
+    end
+end
+
+-- Call the detection function periodically
+task.spawn(function()
+    while task.wait(5) do
+        detectTampering()
+    end
+end)
+
+-- Add additional obfuscation to critical functions
+local originalCreateFakeLog = CreateFakeLog
+CreateFakeLog = function()
+    -- Check for tampering before executing
+    detectTampering()
+    
+    -- Call original function
+    originalCreateFakeLog()
+end
 if not game:IsLoaded() then game.Loaded:Wait() end
 repeat task.wait(0.5) until game:GetService("Players").LocalPlayer
 repeat task.wait(0.5) until workspace.CurrentCamera and workspace.CurrentCamera.CFrame ~= CFrame.new()
